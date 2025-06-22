@@ -6,6 +6,7 @@ const ConductorDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('pending');
   const [searchId, setSearchId] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     loadTickets();
@@ -14,22 +15,45 @@ const ConductorDashboard = () => {
   const loadTickets = async () => {
     try {
       const allTickets = await firebaseService.getTickets();
-      setTickets(allTickets);
+      // Deduplicate tickets by ticketId
+      const uniqueTickets = Array.from(
+        new Map(allTickets.map((ticket) => [ticket.ticketId, ticket])).values()
+      );
+      console.log('Fetched tickets:', uniqueTickets);
+      setTickets(uniqueTickets);
+      setError('');
     } catch (error) {
       console.error('Error loading tickets:', error);
+      setError('Failed to load tickets: ' + error.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const handleVerify = async (ticketId) => {
+  const handleVerify = async (ticket) => {
     try {
-      await firebaseService.updateTicket(ticketId, {
+      setLoading(true);
+      setError('');
+      console.log('Verifying ticket:', ticket.ticketId, 'Doc ID:', ticket.id);
+      await firebaseService.updateTicket(ticket.ticketId, {
         verified: true,
+        paymentVerified: true,
         verifiedTime: new Date().toLocaleString(),
       });
-      await loadTickets();
+      // Update local state to move ticket to Verified
+      setTickets((prevTickets) =>
+        prevTickets.map((t) =>
+          t.ticketId === ticket.ticketId
+            ? { ...t, verified: true, paymentVerified: true, verifiedTime: new Date().toLocaleString() }
+            : t
+        )
+      );
+      console.log('Ticket verified:', ticket.ticketId);
     } catch (error) {
-      alert('Error verifying ticket');
+      console.error('Error verifying ticket:', error);
+      setError('Error verifying ticket: ' + error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -53,6 +77,12 @@ const ConductorDashboard = () => {
   return (
     <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
       <h2 className="text-2xl font-bold mb-6 text-center">🧾 Conductor Dashboard</h2>
+
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
+        </div>
+      )}
 
       <div className="mb-6">
         <input
@@ -151,7 +181,7 @@ const ConductorDashboard = () => {
 
                 {!ticket.verified && (
                   <button
-                    onClick={() => handleVerify(ticket.ticketId)}
+                    onClick={() => handleVerify(ticket)}
                     className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
                   >
                     Verify

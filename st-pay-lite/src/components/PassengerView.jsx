@@ -23,7 +23,7 @@ const PassengerView = ({ fromQR = false, busId = 'BUS001-AB' }) => {
   return (
     <div className="min-h-screen bg-gray-100 py-8">
       <div className="container mx-auto px-4">
-        <h1 className="text-3xl font-bold text-center mb-8">🚌 Bus Ticket Booking</h1>
+        <h1 className="text-3xl font-bold text-center mb-8">🚌 ST Pay Lite</h1>
         {ticketData ? (
           <TicketSuccess ticketData={ticketData} onNewTicket={handleNewTicket} />
         ) : showQRLanding ? (

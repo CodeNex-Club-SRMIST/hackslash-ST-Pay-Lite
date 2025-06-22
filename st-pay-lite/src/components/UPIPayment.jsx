@@ -1,32 +1,30 @@
 import { useState, useEffect } from 'react';
-import QRCode from 'qrcode';
+import axios from 'axios';
 import phonepeLogo from '../assets/images/phonepe-logo.png';
 import googlepayLogo from '../assets/images/googlepay-logo.png';
 import paytmLogo from '../assets/images/paytm-logo.png';
 import amazonpayLogo from '../assets/images/amazonpay-logo.png';
 
-const UPIPayment = ({ amount, ticketId, onPaymentInitiated, onCancel }) => {
+const UPIPayment = ({ amount, ticketId, onPaymentInitiated, onPaymentSuccess, onCancel }) => {
   const [selectedUPI, setSelectedUPI] = useState('');
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
-  const [qrCode, setQRCode] = useState('');
-  const [timeLeft, setTimeLeft] = useState(15); // 15 seconds
+  const [timeLeft, setTimeLeft] = useState(15);
 
   const upiApps = [
-    { id: 'phonepe', name: 'PhonePe', color: 'bg-purple-500', logo: phonepeLogo },
-    { id: 'googlepay', name: 'Google Pay', color: 'bg-blue-500', logo: googlepayLogo },
-    { id: 'paytm', name: 'Paytm', color: 'bg-blue-600', logo: paytmLogo },
-    { id: 'amazonpay', name: 'Amazon Pay', color: 'bg-orange-500', logo: amazonpayLogo },
+    { id: 'phonepe', name: 'PhonePe', color: 'bg-purple-500', logo: phonepeLogo, packageName: 'com.phonepe.app' },
+    { id: 'googlepay', name: 'Google Pay', color: 'bg-blue-500', logo: googlepayLogo, packageName: 'com.google.android.apps.nbu.paisa.user' },
+    { id: 'paytm', name: 'Paytm', color: 'bg-blue-600', logo: paytmLogo, packageName: 'net.one97.paytm' },
+    { id: 'amazonpay', name: 'Amazon Pay', color: 'bg-orange-500', logo: amazonpayLogo, packageName: 'in.amazon.mShop.android.shopping' },
   ];
 
-  // Timer logic
   useEffect(() => {
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
           try {
-            onPaymentInitiated(); // Auto-generate ticket after 15 seconds
+            onPaymentInitiated();
           } catch (err) {
             setError('Failed to generate ticket automatically');
           }
@@ -39,33 +37,9 @@ const UPIPayment = ({ amount, ticketId, onPaymentInitiated, onCancel }) => {
     return () => clearInterval(timer);
   }, [onPaymentInitiated]);
 
-  // Generate QR code
-  useEffect(() => {
-    const deepLink = generateUPIDeepLink();
-    QRCode.toDataURL(deepLink, (err, url) => {
-      if (!err) setQRCode(url);
-      else setError('Failed to generate QR code');
-    });
-  }, [amount, ticketId]);
-
-  const generateUPIDeepLink = () => {
-    const merchantVPA = import.meta.env.VITE_MERCHANT_VPA || 'test@upi';
-    const merchantName = 'Bus Ticketing App';
-    const encodedMerchantName = encodeURIComponent(merchantName);
-    const encodedTransactionNote = encodeURIComponent(`Ticket Payment ${ticketId}`);
-    const amountStr = amount.toFixed(2);
-
-    return `upi://pay?pa=${merchantVPA}&pn=${encodedMerchantName}&am=${amountStr}&cu=INR&tn=${encodedTransactionNote}&tr=${ticketId}`;
-  };
-
-  const handlePayment = () => {
+  const handlePayment = async () => {
     if (!selectedUPI) {
       setError('Please select a UPI app');
-      return;
-    }
-
-    if (!import.meta.env.VITE_MERCHANT_VPA) {
-      setError('Merchant VPA not configured. Please contact support.');
       return;
     }
 
@@ -73,18 +47,59 @@ const UPIPayment = ({ amount, ticketId, onPaymentInitiated, onCancel }) => {
     setError('');
 
     try {
-      const deepLink = generateUPIDeepLink();
-      window.location.href = deepLink;
-      setTimeout(() => {
-        setProcessing(false);
-      }, 1000);
+      const { data } = await axios.post(
+        'http://localhost:5001/st-pay-90643/us-central1/createOrder',
+        { amount }
+      );
+
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+        amount: data.amount,
+        currency: data.currency,
+        order_id: data.orderId,
+        name: 'ST Pay Lite',
+        description: `Ticket Payment ${ticketId}`,
+        image: '/vite.svg',
+        handler: function (response) {
+          setProcessing(false);
+          onPaymentSuccess({
+            paymentId: response.razorpay_payment_id,
+            orderId: response.razorpay_order_id,
+            signature: response.razorpay_signature,
+          });
+        },
+        modal: {
+          ondismiss: function () {
+            setProcessing(false);
+            setError('Payment cancelled or failed');
+          },
+        },
+        prefill: {
+          name: 'Passenger',
+          email: 'passenger@example.com',
+          contact: '9999999999',
+          vpa: 'success@razorpay',
+        },
+        theme: {
+          color: '#3B82F6',
+        },
+        method: {
+          upi: true,
+        },
+        upi: {
+          flow: 'intent',
+          packageName: upiApps.find((app) => app.id === selectedUPI)?.packageName || '',
+        },
+      };
+
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
     } catch (err) {
-      setError('Failed to initiate payment. Please try again.');
+      setError(err.response?.data?.error || 'Payment initiation failed');
       setProcessing(false);
     }
   };
 
-  // Format time as MM:SS
   const formatTime = (seconds) => {
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -130,13 +145,6 @@ const UPIPayment = ({ amount, ticketId, onPaymentInitiated, onCancel }) => {
           </button>
         ))}
       </div>
-
-      {qrCode && (
-        <div className="text-center mb-4">
-          <p className="text-gray-600 mb-2">Scan to pay on desktop</p>
-          <img src={qrCode} alt="UPI QR Code" className="mx-auto h-32" />
-        </div>
-      )}
 
       <div className="space-y-3">
         <button

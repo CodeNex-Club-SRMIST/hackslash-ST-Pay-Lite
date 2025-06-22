@@ -2,19 +2,27 @@ import { useState, useEffect } from 'react';
 import PassengerView from './components/PassengerView';
 import ConductorView from './components/ConductorView';
 import AdminView from './components/AdminView';
+import busRoutes from './utils/busRoutes';
 
 const App = () => {
   const [currentView, setCurrentView] = useState('passenger');
 
   const urlParams = new URLSearchParams(window.location.search);
-  const busId = urlParams.get('bus') || 'BUS001-AB';
+  let busId = urlParams.get('bus') || 'BUS001-AT';
   const fromQR = urlParams.has('bus') || urlParams.has('ticket');
 
+  // Validate busId against busRoutes
+  if (!busRoutes[busId]) {
+    console.warn(`Invalid busId: ${busId}. Defaulting to BUS001-AT`);
+    busId = 'BUS001-AT';
+  }
+
   useEffect(() => {
+    console.log('App.jsx using busId:', busId);
     if (fromQR) {
       setCurrentView('passenger');
     }
-  }, [fromQR]);
+  }, [fromQR, busId]);
 
   return (
     <div className="min-h-screen bg-gray-100">
